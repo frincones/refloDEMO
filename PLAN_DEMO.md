@@ -108,42 +108,42 @@ Leyenda: **[P0]** indispensable para el demo · **[P1]** muy deseable · **[P2]*
 
 ### Fase 4 · Workers de código (31 oct)
 - [x] [P0] Validador: teléfono en E.164 colombiano, dirección presente y COD > 0. Si falla, el envío queda como NUMERO_INVALIDO o pasa a excepción. *(Hecho en la ingesta del Bloque 1: `lib/ingesta/envios.ts`.)*
-- [ ] [P0] Analista de riesgo con 3 reglas:
+- [x] [P0] Analista de riesgo con 3 reglas:
   - COD alto;
   - varios pedidos con el mismo número;
   - pedido creado de madrugada.
 
   Da un riesgo de 0 a 1 y la prioridad P = R × M × U.
-- [ ] [P0] Sorteo del grupo de control (`DEMO_CONTROL_GROUP_PCT`). Esos envíos no se contactan.
-- [ ] [P0] Planificador:
+- [x] [P0] Sorteo del grupo de control (`DEMO_CONTROL_GROUP_PCT`). Esos envíos no se contactan.
+- [x] [P0] Planificador:
   - *ola* manda la plantilla de confirmación a los pendientes;
   - *recordatorio* a los que no respondieron;
   - las dos respetan el interruptor de apagado.
-- [ ] [P0] Gestor de corte:
+- [x] [P0] Gestor de corte:
   - congela el snapshot en `cortes`;
   - aplica las reglas de confianza (0,75 o más incluye; entre 0,5 y 0,75 incluye con baja prioridad; menos de 0,5 retiene);
   - genera la lista de ruta y el CSV.
-- [ ] [P1] Día D: mensaje "tu mensajero llega en 30 min" a los confirmados, con botones.
+- [x] [P1] Día D: mensaje "tu mensajero llega en 30 min" a los confirmados, con botones.
 
 ### Fase 5 · Herramientas MCP y Agente de contacto (31 oct – 1 nov)
-- [ ] [P0] Herramientas con los nombres del catálogo, esquemas zod y registro en `eventos`:
+- [x] [P0] Herramientas con los nombres del catálogo, esquemas zod y registro en `eventos`:
   - `envio_contexto`;
   - `entrega_registrar_intencion`, idempotente por envío y versión;
   - `entrega_proponer_cambio`;
   - `caso_escalar_a_humano`;
   - `pago_generar_link`, que en el demo devuelve un enlace simulado con el `cod_monto` de la base, nunca un monto que diga el modelo;
   - `politicas_buscar`, con un texto fijo de políticas de entrega.
-- [ ] [P0] Permisos por componente: lista de herramientas permitidas para el Agente de contacto, validada en el servidor.
-- [ ] [P0] System prompt en español colombiano:
+- [x] [P0] Permisos por componente: lista de herramientas permitidas para el Agente de contacto, validada en el servidor.
+- [x] [P0] System prompt en español colombiano:
   - se presenta como asistente virtual de Reflo con la marca de la tienda;
   - no usa lenguaje de cobranza y no pregunta por qué no tiene el dinero;
   - confirma el monto exacto;
   - siempre ofrece hablar con una persona;
   - el texto del comprador es dato, no instrucción.
-- [ ] [P0] `/api/chat`: carga el contexto desde Supabase y llama a OpenAI (`gpt-5.5`, Responses API con function calling) con las herramientas en ciclo. Devuelve la respuesta en streaming y guarda el mensaje y la promesa.
-- [ ] [P0] Resultado estructurado del turno: estado, confianza y evidencia, para el panel "lo que entendió el agente".
-- [ ] [P0] Reglas de escalamiento: fraude, cliente molesto, COD por encima del umbral y tercero con COD.
-- [ ] [P1] `gpt-5.4-mini` clasifica la intención antes de llamar a `gpt-5.5`, para mostrar el uso de dos modelos.
+- [x] [P0] `/api/chat`: carga el contexto desde Supabase y llama a OpenAI (`gpt-5.5`, Responses API con function calling) con las herramientas en ciclo. Devuelve la respuesta en streaming y guarda el mensaje y la promesa. *(Bloque 2A: ver `docs/AGENTE.md`; `npm run test:agente` 117/117.)*
+- [x] [P0] Resultado estructurado del turno: estado, confianza y evidencia, para el panel "lo que entendió el agente".
+- [x] [P0] Reglas de escalamiento: fraude, cliente molesto, COD por encima del umbral y tercero con COD.
+- [x] [P1] `gpt-5.4-mini` clasifica la intención antes de llamar a `gpt-5.5`, para mostrar el uso de dos modelos.
 - [ ] [P2] Exponer las herramientas en `/api/mcp` con `mcp-handler` para abrirlas desde Claude Desktop en el demo.
 
 ### Fase 6 · Simulador de WhatsApp (1–2 nov)
