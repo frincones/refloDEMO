@@ -7,7 +7,7 @@ import { ChipEstado } from "@/components/consola/Chips";
 import { useBuffer, useConfig, useUltimoCorte } from "@/hooks/datos";
 import { post, textoError } from "@/lib/ui/api";
 import { exportarListaRuta } from "@/lib/ui/corte";
-import { cop, fechaHora, nombreCorto } from "@/lib/ui/formato";
+import { cop, fechaHora, franjaTexto, nombreCorto } from "@/lib/ui/formato";
 import { toast } from "@/lib/ui/toast";
 
 type R = Record<string, unknown>;
@@ -43,6 +43,11 @@ const ACCION: Record<string, [string, string]> = {
   baja: ["Baja prioridad", "c-warn"],
   retener: ["Retener", "c-info"],
   excluir: ["Excluir", "c-risk"],
+  // Valores de `items[].accion` del gestor de corte
+  INCLUIR: ["Incluir", "c-ok"],
+  INCLUIR_BAJA_PRIORIDAD: ["Baja prioridad", "c-warn"],
+  RETENER: ["Retener", "c-info"],
+  EXCLUIR: ["Excluir", "c-risk"],
 };
 
 export default function Control() {
@@ -267,7 +272,7 @@ export default function Control() {
                         <td>
                           <span className={`chip ${ACCION[it.accion]?.[1] || "c-idle"}`}>{ACCION[it.accion]?.[0] || it.accion}</span>
                         </td>
-                        <td>{it.franja || "—"}</td>
+                        <td>{franjaTexto(it.franja) || "—"}</td>
                         <td style={{ whiteSpace: "normal", minWidth: 180 }}>{it.nota || "—"}</td>
                       </tr>
                     ))}

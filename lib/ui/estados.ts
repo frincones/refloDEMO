@@ -118,6 +118,7 @@ export const TIPOS_CASO: Record<string, { label: string; icono: string; tono: st
   cod_alto: { label: "COD alto", icono: "cash", tono: "c-risk" },
   tercero_cod: { label: "Recibe un tercero con COD", icono: "users", tono: "c-info" },
   cambio_direccion: { label: "Cambio de dirección", icono: "pin", tono: "c-warn" },
+  reprogramacion: { label: "Reprogramación fuera de política", icono: "clock", tono: "c-info" },
   otro: { label: "Excepción", icono: "flag", tono: "c-idle" },
 };
 
@@ -134,5 +135,5 @@ export const PREFERENCIA_PAGO: Record<string, string> = {
 };
 
 export function todosLosEstados(): EstadoIntencion[] {
-  return ORDEN_ESTADOS.filter((e) => e !== "CONTACTANDO") as EstadoIntencion[];
+  return ORDEN_ESTADOS;
 }

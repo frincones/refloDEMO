@@ -40,13 +40,21 @@ export type BurbujaProps = {
   escribiendo?: boolean;
   pendiente?: boolean;
   quien?: string;
+  /** El texto es la transcripción de una nota de voz. */
+  audio?: boolean;
 };
 
-export function Burbuja({ rol, texto, hora, botones, elegido, alElegir, botonesActivos, escribiendo, pendiente, quien }: BurbujaProps) {
+export function Burbuja({ rol, texto, hora, botones, elegido, alElegir, botonesActivos, escribiendo, pendiente, quien, audio }: BurbujaProps) {
   if (rol === "sistema") return <div className="sys">{texto}</div>;
   const sale = rol === "comprador";
   return (
     <div className={`msg ${sale ? "out" : "in"}${pendiente ? " pend" : ""}`}>
+      {audio && (
+        <span className="audio-nota" aria-label="Nota de voz">
+          <span aria-hidden="true">🎤 ▶ ━━━━━━━━ 0:07</span>
+          <small>Transcripción automática</small>
+        </span>
+      )}
       {!sale && <span className="who">{quien || (rol === "persona" ? "Persona · supervisor de torre" : "Agente de contacto")}</span>}
       {escribiendo && !texto ? (
         <span className="typing" aria-label="escribiendo">

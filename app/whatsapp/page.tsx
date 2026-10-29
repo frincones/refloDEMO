@@ -10,7 +10,7 @@ import { useBuffer, useEnvio, useEventos, type FilaBuffer } from "@/hooks/datos"
 import { ESCENARIOS } from "@/lib/escenarios";
 import { ApiError, post, postStream, textoError } from "@/lib/ui/api";
 import { ORDEN_ESTADOS, PREFERENCIA_PAGO, defCaso, defEstado, detalleEstado, estadoVista } from "@/lib/ui/estados";
-import { cop, franja, hora, iniciales, nombreCorto, telefonoOculto } from "@/lib/ui/formato";
+import { cop, fechaCorta, franja, hora, iniciales, nombreCorto, telefonoOculto } from "@/lib/ui/formato";
 import { leerSSE } from "@/lib/ui/sse";
 import { toast } from "@/lib/ui/toast";
 import type { Boton, Evento, Mensaje } from "@/lib/ui/tipos";
@@ -22,13 +22,16 @@ type Intencion = {
   franja_inicio?: string | null;
   franja_fin?: string | null;
   preferencia_pago?: string | null;
+  fecha_entrega?: string | null;
   evidencia?: unknown;
   accion_ruta?: string | null;
+  version?: number;
 };
 type Turno = {
   n: number;
   envioId: string;
   texto: string;
+  audio: boolean;
   enviadoEn: number;
   baseComprador: number;
   baseAgente: number;
@@ -81,6 +84,7 @@ function Simulador() {
   const [borrador, setBorrador] = useState("");
   const cuerpo = useRef<HTMLDivElement>(null);
   const abortar = useRef<AbortController | null>(null);
+  const tomadaRef = useRef(false);
 
   useEffect(() => setVistos(leerVistos()), []);
   useEffect(() => () => abortar.current?.abort(), []);
@@ -126,7 +130,7 @@ function Simulador() {
     if (el) el.scrollTop = el.scrollHeight;
   }, [firma, sel]);
 
-  async function enviar(texto: string, boton?: Boton) {
+  async function enviar(texto: string, boton?: Boton, audio = false) {
     const t = texto.trim();
     if (!sel || !t || ocupado) return;
     const envioId = sel;
@@ -135,6 +139,7 @@ function Simulador() {
       n,
       envioId,
       texto: t,
+      audio,
       enviadoEn: Date.now(),
       baseComprador: mensajes.filter((m) => m.rol === "comprador" && m.texto.trim() === t).length,
       baseAgente: mensajes.filter((m) => m.rol === "agente").length,
@@ -153,7 +158,7 @@ function Simulador() {
     const ctl = new AbortController();
     abortar.current = ctl;
     try {
-      const res = await postStream("/api/chat", { envio_id: envioId, texto: t, ...(boton ? { boton_id: boton.id } : {}) }, ctl.signal);
+      const res = await postStream("/api/chat", { envio_id: envioId, texto: t, ...(boton ? { boton_id: boton.id } : {}), ...(audio ? { es_audio: true } : {}) }, ctl.signal);
       for await (const ev of leerSSE(res)) {
         const d = (ev.datos || {}) as Record<string, unknown>;
         switch (ev.evento) {
@@ -174,12 +179,14 @@ function Simulador() {
             toast(`Escalado a una persona · ${defCaso(String(d.tipo)).label}`, "info");
             break;
           case "fin":
+            // Tras `error agente_en_pausa` llega `fin {mensaje_id:null}`: se conserva el error.
             upd(envioId, (x) => ({ ...x, mensajeId: (d.mensaje_id as string) || null, terminado: true }));
             break;
           case "error": {
             const m = String(d.mensaje ?? "error");
             upd(envioId, (x) => ({ ...x, error: m, terminado: true }));
-            toast(m === "agente_en_pausa" ? "Agentes en pausa: el agente no responde. Reanúdalos en Actividad de agentes." : `Error del agente: ${m}`, "error");
+            if (m !== "agente_en_pausa") toast(`Error del agente: ${m}`, "error");
+            else if (!tomadaRef.current) toast("Agentes en pausa: el agente no responde. Reanúdalos en Actividad de agentes.", "error");
             break;
           }
         }
@@ -219,7 +226,9 @@ function Simulador() {
           franja_inicio: vigente.franja_inicio,
           franja_fin: vigente.franja_fin,
           preferencia_pago: vigente.preferencia_pago,
+          fecha_entrega: vigente.fecha_entrega,
           evidencia: vigente.evidencia,
+          version: vigente.version,
         }
       : null);
   const ultimoComprador = [...mensajes].reverse().find((m) => m.rol === "comprador");
@@ -233,6 +242,18 @@ function Simulador() {
   const linkGenerado =
     !!turno?.herramientas.some((h) => /pago_generar_link/.test(h.nombre)) || !!(eventos || []).some((e) => /pago_generar_link/.test(e.herramienta || ""));
   const casosAbiertos = (det?.casos || []).filter((c) => c.estado === "abierto");
+  const casoTomado = (det?.casos || []).find((c) => c.estado === "tomado") ?? null;
+  tomadaRef.current = !!casoTomado;
+
+  async function resolverCaso(id: string, accion: "tomar" | "devolver") {
+    try {
+      await post(`/api/casos/${id}/resolver`, { accion });
+      toast(accion === "tomar" ? "Tomaste la conversación · el agente queda en silencio" : "Conversación devuelta al agente");
+      recargarEnvio();
+    } catch (e) {
+      toast(textoError(e), "error");
+    }
+  }
   const estadoActual = envio ? estadoVista(envio, mensajes.some((m) => m.rol === "agente")) : null;
 
   async function simularPago() {
@@ -273,7 +294,7 @@ function Simulador() {
       <div className="card esc-bar" role="group" aria-label="Escenarios de un clic">
         <span className="esc-lab">Escenarios</span>
         {ESCENARIOS.map((e) => (
-          <button key={e.id} type="button" className="esc-btn" disabled={!sel || ocupado} title={`${e.texto}\n→ esperado: ${e.esperado}`} onClick={() => enviar(e.texto)}>
+          <button key={e.id} type="button" className="esc-btn" disabled={!sel || ocupado} title={`${e.texto}\n→ esperado: ${e.esperado}`} onClick={() => enviar(e.texto, undefined, !!e.audio)}>
             <span aria-hidden="true">{e.emoji}</span>
             {e.titulo}
           </button>
@@ -363,6 +384,7 @@ function Simulador() {
                       key={m.id}
                       rol={m.rol}
                       texto={m.texto}
+                      audio={!!m.metadatos?.es_audio}
                       hora={hora(m.created_at)}
                       botones={m.botones}
                       elegido={siguiente?.texto ?? (turno && !siguiente ? turno.texto : null)}
@@ -371,7 +393,7 @@ function Simulador() {
                     />
                   );
                 })}
-                {turno && verCompradorLocal && <Burbuja rol="comprador" texto={turno.texto} hora={hora(new Date(turno.enviadoEn).toISOString())} pendiente={!turno.terminado} />}
+                {turno && verCompradorLocal && <Burbuja rol="comprador" texto={turno.texto} audio={turno.audio} hora={hora(new Date(turno.enviadoEn).toISOString())} pendiente={!turno.terminado} />}
                 {turno && verAgenteLocal && (
                   <Burbuja
                     rol="agente"
@@ -383,7 +405,15 @@ function Simulador() {
                     alElegir={(b) => enviar(tituloBoton(b), b)}
                   />
                 )}
-                {turno?.error && <div className="sys sys-err">{turno.error === "agente_en_pausa" ? "Agentes en pausa · nadie responde automáticamente" : `No se pudo responder: ${turno.error}`}</div>}
+                {turno?.error && (
+                  <div className="sys sys-err">
+                    {turno.error === "agente_en_pausa"
+                      ? casoTomado
+                        ? "Una persona del equipo atiende esta conversación · el agente no responde"
+                        : "Agentes en pausa · nadie responde automáticamente"
+                      : `No se pudo responder: ${turno.error}`}
+                  </div>
+                )}
                 {turno?.caso && <div className="sys">Conversación escalada a una persona · {defCaso(turno.caso.tipo).label}</div>}
               </div>
               <form
@@ -448,6 +478,14 @@ function Simulador() {
                     <span>{franja(intencion?.franja_inicio, intencion?.franja_fin) || "—"}</span>
                   </div>
                   <div>
+                    <small>Fecha de entrega</small>
+                    <span>{intencion?.fecha_entrega ? fechaCorta(intencion.fecha_entrega) : "—"}</span>
+                  </div>
+                  <div>
+                    <small>Versión de la promesa</small>
+                    <span className="num">{intencion?.version ? `v${intencion.version}` : "—"}</span>
+                  </div>
+                  <div>
                     <small>Pago</small>
                     <span>{intencion?.preferencia_pago ? PREFERENCIA_PAGO[intencion.preferencia_pago] || intencion.preferencia_pago : "—"}</span>
                   </div>
@@ -461,10 +499,28 @@ function Simulador() {
                   </div>
                 </div>
                 {casosAbiertos.length > 0 && (
-                  <Link href="/excepciones" className="reco" style={{ display: "block", marginTop: 12, textDecoration: "none" }}>
-                    <small>Escalado a una persona</small>
-                    {casosAbiertos.map((c) => defCaso(c.tipo).label).join(" · ")} — ver en Excepciones →
-                  </Link>
+                  <>
+                    <Link href="/excepciones" className="reco" style={{ display: "block", marginTop: 12, textDecoration: "none" }}>
+                      <small>Escalado a una persona</small>
+                      {casosAbiertos.map((c) => defCaso(c.tipo).label).join(" · ")} — ver en Excepciones →
+                    </Link>
+                    {!casoTomado && (
+                      <button type="button" className="btn btn-outline btn-sm" style={{ marginTop: 8 }} onClick={() => resolverCaso(casosAbiertos[0].id, "tomar")}>
+                        <Icono nombre="chat" />
+                        Tomar conversación
+                      </button>
+                    )}
+                  </>
+                )}
+                {casoTomado && (
+                  <div className="reco" style={{ marginTop: 12 }}>
+                    <small>Conversación tomada por una persona</small>
+                    {defCaso(casoTomado.tipo).label} · el agente está en silencio para este envío.
+                    <button type="button" className="btn btn-primary btn-sm" style={{ marginTop: 8, display: "flex" }} onClick={() => resolverCaso(casoTomado.id, "devolver")}>
+                      <Icono nombre="bot" />
+                      Devolver al agente
+                    </button>
+                  </div>
                 )}
                 {linkGenerado && (
                   <button type="button" className="btn btn-primary btn-sm" style={{ marginTop: 12 }} onClick={simularPago}>

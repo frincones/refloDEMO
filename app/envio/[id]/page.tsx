@@ -105,14 +105,16 @@ export default function DetalleEnvio({ params }: { params: Promise<{ id: string 
   const estado = estadoVista(e, mensajes.some((m) => m.rol === "agente"));
   const { idx, tiempos } = pasos(e, mensajes, vigente);
   const casoAbierto = datos.casos.find((c) => c.estado === "abierto");
+  const casoTomado = datos.casos.find((c) => c.estado === "tomado");
   const herramientas = (eventos || []).filter((x) => x.herramienta).slice().reverse();
 
   async function tomar() {
-    if (!casoAbierto) return;
+    const caso = casoTomado ?? casoAbierto;
+    if (!caso) return;
     setTomando(true);
     try {
-      await post(`/api/casos/${casoAbierto.id}/resolver`, { accion: "tomar" });
-      toast(`Tomaste la conversación de ${e!.tracking_number}. El agente queda en silencio.`);
+      await post(`/api/casos/${caso.id}/resolver`, { accion: casoTomado ? "devolver" : "tomar" });
+      toast(casoTomado ? `Conversación de ${e!.tracking_number} devuelta al agente.` : `Tomaste la conversación de ${e!.tracking_number}. El agente queda en silencio.`);
     } catch (err) {
       toast(textoError(err), "error");
     } finally {
@@ -144,12 +146,12 @@ export default function DetalleEnvio({ params }: { params: Promise<{ id: string 
             <Icono nombre="phone" />
             Abrir en el simulador
           </Link>
-          <span className="tip-wrap" tabIndex={casoAbierto ? -1 : 0}>
-            <button className="btn btn-outline" type="button" onClick={tomar} disabled={!casoAbierto || tomando}>
-              <Icono nombre="chat" />
-              Tomar conversación
+          <span className="tip-wrap" tabIndex={casoAbierto || casoTomado ? -1 : 0}>
+            <button className={`btn ${casoTomado ? "btn-primary" : "btn-outline"}`} type="button" onClick={tomar} disabled={(!casoAbierto && !casoTomado) || tomando}>
+              <Icono nombre={casoTomado ? "bot" : "chat"} />
+              {casoTomado ? "Devolver al agente" : "Tomar conversación"}
             </button>
-            {!casoAbierto && (
+            {!casoAbierto && !casoTomado && (
               <span className="tip" role="tooltip">
                 Disponible cuando el envío tiene un caso abierto en <b>Excepciones</b>: la persona toma la conversación y el agente queda en silencio.
               </span>

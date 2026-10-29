@@ -14,7 +14,7 @@ const RESULTADO: Record<string, [string, string, string]> = {
   aprobado: ["Aprobado", "c-ok", "Recomendación aplicada · estado de intención actualizado"],
   rechazado: ["Rechazado", "c-risk", "Recomendación descartada · el agente no actúa"],
   tomado: ["Conversación tomada", "c-info", "Una persona atiende por WhatsApp · agente en silencio"],
-  cerrado: ["Cerrado", "c-idle", "Caso cerrado"],
+  cerrado: ["Devuelto al agente", "c-idle", "Una persona atendió y devolvió la conversación al agente"],
 };
 
 function confianzaDe(c: Caso): number | null {
@@ -47,11 +47,11 @@ function Tarjeta({ c, envio, eventos }: { c: Caso; envio: Envio | undefined; eve
   const resuelto = c.estado !== "abierto";
   const res = RESULTADO[c.estado];
 
-  async function resolver(accion: "aprobar" | "rechazar" | "tomar") {
+  async function resolver(accion: "aprobar" | "rechazar" | "tomar" | "devolver") {
     setOcupado(true);
     try {
       await post(`/api/casos/${c.id}/resolver`, { accion });
-      const t = { aprobar: "Aprobado", rechazar: "Rechazado", tomar: "Conversación tomada" }[accion];
+      const t = { aprobar: "Aprobado", rechazar: "Rechazado", tomar: "Conversación tomada · el agente queda en silencio", devolver: "Conversación devuelta al agente" }[accion];
       toast(`${t} · ${envio?.tracking_number || ""}`);
     } catch (e) {
       toast(textoError(e), "error");
@@ -142,6 +142,18 @@ function Tarjeta({ c, envio, eventos }: { c: Caso; envio: Envio | undefined; eve
           <span style={{ color: "var(--muted)", fontWeight: 500 }}>
             {res?.[2]} · {c.resuelto_por || "supervisor"} · {hora(c.resuelto_at || c.updated_at)}
           </span>
+          {c.estado === "tomado" && (
+            <span className="actions-row" style={{ marginLeft: "auto" }}>
+              <Link className="btn btn-ghost btn-sm" href={`/whatsapp?envio=${c.envio_id}`}>
+                <Icono nombre="phone" />
+                Ver chat
+              </Link>
+              <button className="btn btn-primary btn-sm" type="button" disabled={ocupado} onClick={() => resolver("devolver")}>
+                <Icono nombre="bot" />
+                Devolver al agente
+              </button>
+            </span>
+          )}
         </div>
       )}
     </article>
@@ -154,8 +166,9 @@ export default function Excepciones() {
   const { datos: eventos } = useEventos(300);
   const [tab, setTab] = useState<"pend" | "res">("pend");
   const envios = useMemo(() => new Map((filas || []).map((f) => [f.envio.id, f.envio])), [filas]);
-  const pendientes = (casos || []).filter((c) => c.estado === "abierto");
-  const resueltas = (casos || []).filter((c) => c.estado !== "abierto");
+  // Los casos "tomados" siguen en la bandeja: una persona los atiende y puede devolverlos al agente.
+  const pendientes = (casos || []).filter((c) => c.estado === "abierto" || c.estado === "tomado");
+  const resueltas = (casos || []).filter((c) => c.estado !== "abierto" && c.estado !== "tomado");
   const lista = tab === "pend" ? pendientes : resueltas;
 
   return (

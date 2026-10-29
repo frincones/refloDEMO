@@ -43,27 +43,40 @@ export function fechaCorta(iso: string | null | undefined): string {
   return d.toLocaleDateString("es-CO", { timeZone: TZ, weekday: "short", day: "numeric", month: "short" });
 }
 
-/** "2–5 pm" a partir de franja_inicio / franja_fin (timestamptz o "HH:MM"). */
+/** Hora "14:00" / timestamptz → { h, m } en hora de Bogotá. */
+function horaMin(s: string | null | undefined): { h: number; m: number } | null {
+  if (!s) return null;
+  const x = /^(\d{1,2}):(\d{2})/.exec(s.trim());
+  if (x) return { h: Number(x[1]) % 24, m: Number(x[2]) };
+  const d = new Date(s);
+  if (isNaN(d.getTime())) return null;
+  const [h, m] = d.toLocaleString("en-GB", { timeZone: TZ, hour: "2-digit", minute: "2-digit", hour12: false }).split(":").map(Number);
+  return { h: h % 24, m };
+}
+
+/** 14 → "2 pm", 12 → "12 m", 9:30 → "9:30 am" (como los botones del agente). */
+export function hora12(t: { h: number; m: number }): string {
+  const min = t.m ? `:${String(t.m).padStart(2, "0")}` : "";
+  if (t.h === 12 && !t.m) return "12 m";
+  if (t.h === 0) return `12${min} am`;
+  return t.h >= 12 ? `${t.h === 12 ? 12 : t.h - 12}${min} pm` : `${t.h}${min} am`;
+}
+
+/** "2 pm – 5 pm" a partir de franja_inicio / franja_fin ("HH:MM" o timestamptz). */
 export function franja(ini: string | null | undefined, fin: string | null | undefined): string {
-  if (!ini && !fin) return "";
-  const h = (s: string | null | undefined) => {
-    if (!s) return null;
-    if (/^\d{1,2}:\d{2}/.test(s)) return Number(s.split(":")[0]);
-    const d = new Date(s);
-    if (isNaN(d.getTime())) return null;
-    return Number(d.toLocaleString("en-US", { timeZone: TZ, hour: "numeric", hour12: false })) % 24;
-  };
-  const a = h(ini);
-  const b = h(fin);
-  const f12 = (x: number) => (x === 12 ? "12 m" : x > 12 ? `${x - 12} pm` : `${x} am`);
-  if (a !== null && b !== null) {
-    const sufijo = (x: number) => (x >= 12 ? "pm" : "am");
-    if (sufijo(a) === sufijo(b) && a !== 12 && b !== 12) return `${a > 12 ? a - 12 : a}–${b > 12 ? b - 12 : b} ${sufijo(b)}`;
-    return `${f12(a)} – ${f12(b)}`;
-  }
-  if (a !== null) return `desde ${f12(a)}`;
-  if (b !== null) return `hasta ${f12(b)}`;
+  const a = horaMin(ini);
+  const b = horaMin(fin);
+  if (a && b) return `${hora12(a)} – ${hora12(b)}`;
+  if (a) return `desde ${hora12(a)}`;
+  if (b) return `hasta ${hora12(b)}`;
   return "";
+}
+
+/** Franja del corte ("14:00–17:00") → "2 pm – 5 pm". */
+export function franjaTexto(s: string | null | undefined): string {
+  if (!s) return "";
+  const [a, b] = s.split(/\s*[–-]\s*/);
+  return franja(a, b) || s;
 }
 
 export function hace(iso: string | null | undefined, ahora = Date.now()): string {

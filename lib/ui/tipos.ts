@@ -13,10 +13,12 @@ export type EstadoIntencion =
   | "RIESGO_FRAUDE"
   | "NO_CONTACTADO"
   | "NUMERO_INVALIDO"
-  | "GRUPO_CONTROL";
+  | "GRUPO_CONTROL"
+  /** Valor del enum `estado_buffer` agregado por la migración 0003 (la ola ya envió la plantilla). */
+  | "CONTACTANDO";
 
-/** Estado que muestra la consola: el de la base + CONTACTANDO (pendiente con mensajes del agente). */
-export type EstadoVista = EstadoIntencion | "CONTACTANDO";
+/** Estado que muestra la consola (el de la base; CONTACTANDO también se infiere de bases viejas). */
+export type EstadoVista = EstadoIntencion;
 
 export type Envio = {
   id: string;
