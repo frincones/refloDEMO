@@ -51,16 +51,18 @@ const ESTADOS_AGENTE = [
 // ---------------------------------------------------------------------
 export async function construirContexto(envioId: string) {
   const db = supabaseServer();
-  const e = await leerEnvio(envioId);
-  if (!e) return null;
-  const cfg = await leerConfig();
-  const ahora = ahoraDemo(cfg);
-  const [pv, msgs, casos] = await Promise.all([
+  // Todas las lecturas en paralelo (latencia del turno del agente)
+  const [e, cfg, pv, msgs, casos, reprog] = await Promise.all([
+    leerEnvio(envioId),
+    leerConfig(),
     promesaVigente(envioId),
     db.from("mensajes").select("rol, texto, botones, created_at").eq("envio_id", envioId).order("created_at", { ascending: false }).limit(20),
     db.from("casos").select("id, tipo, estado").eq("envio_id", envioId).in("estado", ["abierto", "tomado"]),
+    db.from("promesas").select("id", { count: "exact", head: true }).eq("envio_id", envioId).eq("estado", "REPROGRAMADO"),
   ]);
-  const { count: reprogramaciones } = await db.from("promesas").select("id", { count: "exact", head: true }).eq("envio_id", envioId).eq("estado", "REPROGRAMADO");
+  if (!e) return null;
+  const ahora = ahoraDemo(cfg);
+  const reprogramaciones = reprog.count;
   return {
     hoy: fechaISO(ahora),
     fecha_entrega_prevista: fechaEntregaManana(ahora),

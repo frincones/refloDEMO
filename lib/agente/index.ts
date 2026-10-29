@@ -11,6 +11,7 @@ import { decidirRuta } from "@/lib/workers/reglas";
 import { horaBogota, leerConfig } from "@/lib/workers/util";
 import { construirInstrucciones } from "./prompt";
 import { clasificarIntencion, type Clasificacion } from "./clasificador";
+import { planBoton } from "./rapido";
 
 // Agente de contacto: un turno de conversación.
 // OpenAI Responses API con function calling y streaming; ciclo de herramientas con previous_response_id.
@@ -19,6 +20,8 @@ export type Emitir = <K extends NombreEventoChat>(evento: K, datos: EventosChat[
 
 const MAX_PASOS = 6;
 const HERRAMIENTAS_PROMESA = new Set(["entrega_registrar_intencion", "entrega_proponer_cambio", "pago_generar_link"]);
+/** Herramientas cuyo resultado el modelo necesita para redactar (exigen una segunda llamada). */
+const HERRAMIENTAS_LECTURA = new Set(["pago_generar_link", "politicas_buscar", "envio_contexto"]);
 const FALLBACK = "Disculpa, se me complicó responderte en este momento. Ya le pasé tu mensaje a una persona del equipo de Reflo, que te escribe en breve 🙏";
 
 let cliente: OpenAI | null = null;
@@ -29,9 +32,11 @@ function openai(): OpenAI {
 
 /** ¿El agente debe callar? (interruptor de apagado o conversación tomada por una persona) */
 export async function agenteSilenciado(envioId: string): Promise<"pausa" | "tomado" | null> {
-  const cfg = await leerConfig();
+  const [cfg, { count }] = await Promise.all([
+    leerConfig(),
+    supabaseServer().from("casos").select("id", { count: "exact", head: true }).eq("envio_id", envioId).eq("estado", "tomado"),
+  ]);
   if (cfg.agentes_pausados) return "pausa";
-  const { count } = await supabaseServer().from("casos").select("id", { count: "exact", head: true }).eq("envio_id", envioId).eq("estado", "tomado");
   return (count || 0) > 0 ? "tomado" : null;
 }
 
@@ -80,6 +85,59 @@ async function emitirIntencion(emitir: Emitir, envioId: string, cita: string) {
   return datos;
 }
 
+/** Turno de botón resuelto sin LLM: herramientas por el gateway + respuesta de plantilla. */
+async function turnoDeterminista(
+  plan: NonNullable<ReturnType<typeof planBoton>>,
+  p: { envio_id: string; boton_id?: string; es_audio?: boolean },
+  texto: string,
+  emitir: Emitir,
+  inicio: number,
+): Promise<ResultadoTurno | null> {
+  const db = supabaseServer();
+  const usadas: string[] = [];
+  const resultados: Record<string, unknown>[] = [];
+  let botones: Boton[] | null = null;
+  let intencion: EventosChat["intencion"] | null = null;
+  const casos = new Map<string, TipoCaso>();
+  for (const ll of plan.llamadas) {
+    const r = await ejecutarHerramienta(ll.nombre, ll.args, { componente: "agente_contacto", envio_id: p.envio_id });
+    usadas.push(ll.nombre);
+    const { politica: _pol, mensajes: _m, ...resVisible } = r as Record<string, unknown>;
+    emitir("herramienta", { nombre: ll.nombre, entrada: ll.args, resultado: resVisible });
+    // Si una regla rechaza la acción, el modelo se encarga del turno (ve el historial y vuelve a intentar).
+    if (!r.ok) return null;
+    resultados.push(r as Record<string, unknown>);
+    if (ll.nombre === "whatsapp_ofrecer_botones") botones = (r.botones as Boton[]) || null;
+    for (const c of r.casos || []) {
+      if (!casos.has(c.id)) {
+        casos.set(c.id, c.tipo);
+        emitir("caso", { id: c.id, tipo: c.tipo });
+      }
+    }
+    if (HERRAMIENTAS_PROMESA.has(ll.nombre) && r.promesa) intencion = (await emitirIntencion(emitir, p.envio_id, texto)) || intencion;
+  }
+  const respuesta = plan.texto(resultados);
+  emitir("delta", { texto: respuesta });
+  const ms = Date.now() - inicio;
+  const { data: ins, error } = await db
+    .from("mensajes")
+    .insert({ envio_id: p.envio_id, rol: "agente", texto: respuesta, botones, metadatos: { modelo: "determinista", herramientas: usadas, intencion, clasificacion: null, casos: [...casos.keys()], ms, response_id: null, fallo: null } })
+    .select("id")
+    .single();
+  if (error) throw new Error(`mensajes (agente): ${error.message}`);
+  if (botones) emitir("botones", { botones });
+  await registrarEvento({
+    componente: "agente_contacto",
+    herramienta: "turno",
+    envio_id: p.envio_id,
+    entrada: { texto, boton_id: p.boton_id ?? null, es_audio: !!p.es_audio },
+    resultado: { herramientas: usadas, intencion, ms, modelo: "determinista" },
+    nivel: "ok",
+    mensaje: `Agente respondió en ${(ms / 1000).toFixed(1)} s (botón ${p.boton_id}, sin LLM)${intencion ? ` · ${intencion.estado} (${intencion.confianza.toFixed(2)})` : ""}${usadas.length ? ` · ${usadas.join(", ")}` : ""}`,
+  });
+  return { mensaje_id: ins.id, texto: respuesta };
+}
+
 export type ResultadoTurno = { mensaje_id: string | null; texto: string; silenciado?: "pausa" | "tomado" };
 
 /**
@@ -95,13 +153,18 @@ export async function ejecutarTurno(
   const tituloBoton = p.boton_id ? CATALOGO_BOTONES[p.boton_id]?.titulo : undefined;
   const texto = (p.texto || tituloBoton || p.boton_id || "").trim();
 
-  // 1) Mensaje del comprador (siempre se guarda, aunque el agente esté en pausa)
+  // 1–3) En paralelo (latencia): guardar el mensaje del comprador (siempre, aunque el agente esté en pausa),
+  // revisar el interruptor / conversación tomada, armar el contexto y leer el historial.
   const metaComprador = { ...(p.boton_id ? { boton_id: p.boton_id } : {}), ...(p.es_audio ? { es_audio: true } : {}) };
-  const { error: emc } = await db.from("mensajes").insert({ envio_id: p.envio_id, rol: "comprador", texto, metadatos: metaComprador });
-  if (emc) throw new Error(`mensajes: ${emc.message}`);
+  const [insComprador, silencio, ctx, { data: msgs }] = await Promise.all([
+    db.from("mensajes").insert({ envio_id: p.envio_id, rol: "comprador", texto, metadatos: metaComprador }).select("id").single(),
+    agenteSilenciado(p.envio_id),
+    construirContexto(p.envio_id),
+    db.from("mensajes").select("id, rol, texto, botones, metadatos, created_at").eq("envio_id", p.envio_id).order("created_at", { ascending: false }).limit(20),
+  ]);
+  if (insComprador.error) throw new Error(`mensajes: ${insComprador.error.message}`);
 
   // 2) Interruptor de apagado / conversación tomada por una persona
-  const silencio = await agenteSilenciado(p.envio_id);
   if (silencio) {
     await registrarEvento({
       componente: "agente_contacto",
@@ -116,17 +179,18 @@ export async function ejecutarTurno(
     return { mensaje_id: null, texto: "", silenciado: silencio };
   }
 
-  // 3) Contexto
-  const ctx = await construirContexto(p.envio_id);
+  // 3) Contexto e historial (sin el mensaje recién insertado, que se agrega al final: la lectura fue en paralelo)
   if (!ctx) throw new Error("envio_no_existe");
-  const { data: msgs } = await db
-    .from("mensajes")
-    .select("rol, texto, botones, metadatos, created_at")
-    .eq("envio_id", p.envio_id)
-    .order("created_at", { ascending: false })
-    .limit(20);
-  const hist = ((msgs || []) as MensajeHist[]).reverse();
+  const hist = ((msgs || []) as (MensajeHist & { id: string })[]).filter((m) => m.id !== insComprador.data.id).reverse().slice(-19);
   const ultimoAgente = [...hist].reverse().find((m) => m.rol === "agente")?.texto || "";
+  hist.push({ id: insComprador.data.id, rol: "comprador", texto, botones: null, metadatos: metaComprador });
+
+  // 3b) Botones con intención inequívoca → turno determinista, sin LLM
+  const plan = planBoton(p.boton_id, ctx);
+  if (plan) {
+    const r = await turnoDeterminista(plan, p, texto, emitir, inicio);
+    if (r) return r;
+  }
   const instrucciones = construirInstrucciones(ctx);
   const tools = definicionesOpenAI("agente_contacto");
   const modelo = envOpcional("OPENAI_MODEL_CONVERSA", "gpt-5.5");
@@ -181,6 +245,7 @@ export async function ejecutarTurno(
             tools,
             previous_response_id: responseId,
             reasoning: { effort: esfuerzo },
+            prompt_cache_key: "reflo-agente-contacto",
             stream: true,
           });
           let separado = false;
@@ -207,6 +272,8 @@ export async function ejecutarTurno(
       }
       if (!llamadas.length) break;
 
+      const textoEnEstePaso = respuesta.length > 0 && paso === 0;
+      let necesitaSeguir = !textoEnEstePaso;
       const salidas: unknown[] = [];
       for (const ll of llamadas) {
         let args: unknown = {};
@@ -228,8 +295,21 @@ export async function ejecutarTurno(
         }
         if (r.ok && HERRAMIENTAS_PROMESA.has(ll.name) && r.promesa) intencion = (await emitirIntencion(emitir, p.envio_id, texto)) || intencion;
         salidas.push({ type: "function_call_output", call_id: ll.call_id, output: JSON.stringify(r) });
+        // Texto y herramientas en la misma respuesta: solo hace falta otra llamada si el modelo necesita
+        // el resultado para redactar, si una herramienta falló o si la reprogramación quedó fuera de política.
+        if (HERRAMIENTAS_LECTURA.has(ll.name) || !r.ok || (r as Record<string, unknown>).fuera_de_politica) necesitaSeguir = true;
       }
-      input = salidas;
+      if (!necesitaSeguir) break;
+      input = textoEnEstePaso
+        ? [
+            ...salidas,
+            {
+              role: "developer",
+              content:
+                "Ya enviaste tu mensaje al comprador. Escribe SOLO si hace falta corregir o completar algo según los resultados (una herramienta falló, falta un dato o requiere aprobación); si no, no escribas nada.",
+            },
+          ]
+        : salidas;
     }
   } catch (e) {
     fallo = (e as Error).message;
