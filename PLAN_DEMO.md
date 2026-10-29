@@ -186,9 +186,9 @@ Leyenda: **[P0]** indispensable para el demo · **[P1]** muy deseable · **[P2]*
 - [ ] [P2] Pantalla móvil del mensajero (la del mockup) leyendo la promesa.
 
 ### Fase 8 · Pruebas y ensayo (3–4 nov)
-- [ ] [P0] Correr de punta a punta los 8 escenarios y comprobar el estado final de cada uno.
-- [ ] [P0] Probar el modo `waygo` con el sandbox real, o confirmar que el modo `mock` funciona si la llave no llega.
-- [ ] [P0] Medir que la respuesta del agente llegue en menos de 5 s.
+- [x] [P0] Correr de punta a punta los 8 escenarios y comprobar el estado final de cada uno. ✔ 29-oct en producción: 36/36 pasos API + 14/14 por la UI (ver `docs/QA_E2E.md`).
+- [x] [P0] Probar el modo `waygo` con el sandbox real, o confirmar que el modo `mock` funciona si la llave no llega. ✔ Sin llave del sandbox: el emulador Waygo funciona de punta a punta en producción (crear → webhook → sync → en ruta → entregado).
+- [x] [P0] Medir que la respuesta del agente llegue en menos de 5 s. ✔ Primer texto en 0,5 s (botones) y 1,1–1,6 s (texto libre) en producción; turno completo 3–7 s.
 - [ ] [P0] Ensayo completo con el guion de 15 minutos.
 - [ ] [P0] Grabar un video de respaldo del recorrido completo.
 - [ ] [P1] Ensayo con Emma o con alguien que haga de comprador.

@@ -141,7 +141,25 @@ npm run test:agente                           # http://localhost:3000, 2 rondas
 npm run test:agente -- https://<preview>      # contra Vercel (si la preview está protegida: VERCEL_BYPASS=<secreto> en el entorno)
 AGENTE_RONDAS=1 AGENTE_SIN_RESET=1 npm run test:agente
 ```
-El script reinicia el demo (¡borra la base compartida!), prueba token, preparar, interruptor, ola, los 8 escenarios en paralelo (×2 por no determinismo), recordatorio, tomar/devolver, aprobar cambio de dirección, corte (reglas, versión, CSV), pago y día D. Resultado actual: **117/117**. Latencia por turno: 6–11 s con 8 conversaciones simultáneas (dos llamadas al modelo por turno cuando hay herramientas); el primer `delta` llega cuando el modelo empieza a escribir, después de ejecutar las herramientas.
+El script reinicia el demo (¡borra la base compartida!), prueba token, preparar, interruptor, ola, los 8 escenarios en paralelo (×2 por no determinismo), recordatorio, tomar/devolver, aprobar cambio de dirección, corte (reglas, versión, CSV), pago y día D. Resultado actual: **119/119** (29-oct, después de los cambios de latencia).
+
+### Latencia (29-oct)
+Tres cambios, en `lib/agente/index.ts`, `lib/agente/rapido.ts` y `lib/agente/prompt.ts`:
+1. **Botones sin LLM** (`rapido.ts`): `si_efectivo`, `otra_franja`, `franja_manana|tarde|noche`, `pagar_digital`, `confirmar_cancelacion`, `mantener_pedido` y `dia_d_si` se resuelven con las mismas herramientas del gateway (permisos, validación y auditoría intactos) y una respuesta de plantilla. Si una regla rechaza la herramienta, el turno pasa al modelo. `metadatos.modelo = "determinista"`. Los botones que requieren conversación (`otra_fecha`, `cambiar_direccion`, `dia_d_no`, `dia_d_tercero`, `hablar_persona`) siguen yendo al modelo.
+2. **Hablar → actuar** (texto libre): el paso 0 corre con `tool_choice: "none"` y el texto empieza a llegar en ~1–2 s; el paso 1 ejecuta en silencio las herramientas que corresponden a la conversación y a lo ya dicho. El enlace de pago real lo agrega el sistema al final del mensaje (el modelo nunca escribe un enlace). Si una herramienta falla o la reprogramación queda fuera de política hay un paso visible de corrección. `OPENAI_TEXTO_PRIMERO=0` vuelve al ciclo clásico.
+3. **Menos espera fija**: lecturas en paralelo (mensaje del comprador, interruptor, contexto e historial) y prompt con la parte fija primero + `prompt_cache_key` (prefijo cacheable).
+
+Cada turno guarda `metadatos.tiempos` (preludio, primer evento por paso, primer delta, fin de herramientas) y lo imprime en el log del servidor (`[agente] tiempos ms`).
+
+| Medición (secuencial, 1 conversación) | Antes | Después |
+|---|---|---|
+| Local · primer texto, promedio (todos los turnos) | 7,0 s | 1,9 s |
+| Local · primer texto, máximo | 10,1 s | 2,4 s |
+| Producción · primer texto, botones | — | 0,5 s |
+| Producción · primer texto, texto libre | — | 1,1–1,5 s |
+| Producción · turno completo (herramientas incluidas) | ~8 s | 3–7 s |
+
+`reasoning.effort = none` no mejoró nada frente a `low` (se dejó `low`). Efecto visible del cambio: el evento `intencion`/`caso` llega 2–5 s después del texto (el panel "Lo que entendió el agente" se llena justo después de la respuesta).
 
 ## 7. Desviaciones respecto al contrato
 - `estado_buffer` agrega el valor `CONTACTANDO` (migración 0003).
