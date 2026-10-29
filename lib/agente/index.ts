@@ -231,8 +231,17 @@ export async function ejecutarTurno(
     emitir("delta", { texto: t });
   };
 
+  // "Hablar → actuar" (latencia percibida): el paso 0 corre sin herramientas y el texto empieza a llegar en ~2 s;
+  // el paso 1 ejecuta en silencio las herramientas que corresponden a la conversación y a lo que ya se dijo.
+  // Solo si una herramienta falla (o la reprogramación queda fuera de política) hay un paso visible de corrección.
+  // OPENAI_TEXTO_PRIMERO=0 vuelve al ciclo clásico (herramientas primero, texto al final).
+  const textoPrimero = envOpcional("OPENAI_TEXTO_PRIMERO", "1") !== "0";
+  let fase: "hablar" | "actuar" | "normal" = textoPrimero ? "hablar" : "normal";
+  let link: { link: string; monto_texto: string } | null = null;
+
   try {
     for (let paso = 0; paso < MAX_PASOS; paso++) {
+      const silencioso = fase === "actuar";
       let llamadas: { name: string; arguments: string; call_id: string }[] = [];
       let intentos = 0;
       for (;;) {
@@ -247,12 +256,14 @@ export async function ejecutarTurno(
             previous_response_id: responseId,
             reasoning: { effort: esfuerzo },
             prompt_cache_key: "reflo-agente-contacto",
+            tool_choice: fase === "hablar" ? "none" : "auto",
             stream: true,
           });
           let separado = false;
           for await (const ev of stream) {
             if (tiempos[`p${paso}_primer_evento`] === undefined && ev.type !== "response.created" && ev.type !== "response.in_progress") tiempos[`p${paso}_primer_evento`] = Date.now() - inicio;
             if (ev.type === "response.output_text.delta") {
+              if (silencioso) continue; // en la fase "actuar" el texto ya se envió
               if (tiempos.primer_delta === undefined) tiempos.primer_delta = Date.now() - inicio;
               if (!separado && respuesta.length > 0 && respuesta.length === textoAntes && !/\s$/.test(respuesta)) delta(" ");
               separado = true;
@@ -265,6 +276,7 @@ export async function ejecutarTurno(
               throw new Error(`modelo: ${JSON.stringify((ev as { response?: { error?: unknown } }).response?.error ?? ev)}`);
             }
           }
+          tiempos[`p${paso}_fin`] = Date.now() - inicio;
           break;
         } catch (e) {
           intentos += 1;
@@ -273,10 +285,22 @@ export async function ejecutarTurno(
           console.error("[agente] reintento:", (e as Error).message);
         }
       }
+      if (fase === "hablar") {
+        fase = "actuar";
+        input = [
+          {
+            role: "developer",
+            content:
+              "Tu mensaje ya se envió al comprador. Ahora, SIN escribir texto, llama las herramientas que correspondan a la conversación y a lo que acabas de decirle (entrega_registrar_intencion, entrega_proponer_cambio, caso_escalar_a_humano, whatsapp_ofrecer_botones, pago_generar_link), varias a la vez si hace falta. Si no corresponde ninguna, no llames nada.",
+          },
+        ];
+        continue;
+      }
       if (!llamadas.length) break;
 
       const textoEnEstePaso = respuesta.length > 0 && paso === 0;
-      let necesitaSeguir = !textoEnEstePaso;
+      let necesitaSeguir = fase === "actuar" ? false : !textoEnEstePaso;
+      let corregir = false;
       const salidas: unknown[] = [];
       for (const ll of llamadas) {
         let args: unknown = {};
@@ -301,7 +325,26 @@ export async function ejecutarTurno(
         // Texto y herramientas en la misma respuesta: solo hace falta otra llamada si el modelo necesita
         // el resultado para redactar, si una herramienta falló o si la reprogramación quedó fuera de política.
         if (HERRAMIENTAS_LECTURA.has(ll.name) || !r.ok || (r as Record<string, unknown>).fuera_de_politica) necesitaSeguir = true;
+        if (!r.ok || (r as Record<string, unknown>).fuera_de_politica) corregir = true;
+        if (r.ok && ll.name === "pago_generar_link") link = { link: String(r.link), monto_texto: String(r.monto_texto) };
       }
+      if (fase === "actuar") {
+        // El enlace de pago lo agrega el sistema (el modelo no lo conocía al hablar)
+        if (link && !respuesta.includes(link.link)) delta(`\n${link.link} (${link.monto_texto})`);
+        tiempos[`p${paso}_herramientas_fin`] = Date.now() - inicio;
+        if (!corregir) break;
+        fase = "normal";
+        input = [
+          ...salidas,
+          {
+            role: "developer",
+            content:
+              "Tu mensaje anterior ya se envió. Según estos resultados, escribe SOLO una corrección o aclaración breve para el comprador (una herramienta falló, falta un dato o la reprogramación requiere aprobación de una persona). Puedes volver a llamar herramientas si hace falta.",
+          },
+        ];
+        continue;
+      }
+      tiempos[`p${paso}_herramientas_fin`] = Date.now() - inicio;
       if (!necesitaSeguir) break;
       input = textoEnEstePaso
         ? [
