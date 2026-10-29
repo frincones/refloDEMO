@@ -192,6 +192,7 @@ export async function ejecutarTurno(
     if (r) return r;
   }
   const instrucciones = construirInstrucciones(ctx);
+  const tiempos: Record<string, number> = { preludio: Date.now() - inicio };
   const tools = definicionesOpenAI("agente_contacto");
   const modelo = envOpcional("OPENAI_MODEL_CONVERSA", "gpt-5.5");
   // Esfuerzo de razonamiento (none | low | medium | high). "low" equilibra calidad y latencia.
@@ -250,7 +251,9 @@ export async function ejecutarTurno(
           });
           let separado = false;
           for await (const ev of stream) {
+            if (tiempos[`p${paso}_primer_evento`] === undefined && ev.type !== "response.created" && ev.type !== "response.in_progress") tiempos[`p${paso}_primer_evento`] = Date.now() - inicio;
             if (ev.type === "response.output_text.delta") {
+              if (tiempos.primer_delta === undefined) tiempos.primer_delta = Date.now() - inicio;
               if (!separado && respuesta.length > 0 && respuesta.length === textoAntes && !/\s$/.test(respuesta)) delta(" ");
               separado = true;
               delta(ev.delta);
@@ -316,6 +319,9 @@ export async function ejecutarTurno(
     console.error("[agente] fallo:", fallo);
   }
 
+  tiempos.modelo_fin = Date.now() - inicio;
+  console.info(`[agente] tiempos ms ${JSON.stringify(tiempos)}`);
+
   // 6) Respaldo seguro si el modelo falló o no respondió texto
   if (fallo || !respuesta.trim()) {
     const extra = respuesta.trim() ? " " : "";
@@ -371,7 +377,7 @@ export async function ejecutarTurno(
       rol: "agente",
       texto: respuesta.trim(),
       botones,
-      metadatos: { modelo, herramientas: usadas, intencion, clasificacion: c, casos: [...casos.keys()], ms: Date.now() - inicio, response_id: responseId ?? null, fallo },
+      metadatos: { modelo, herramientas: usadas, intencion, clasificacion: c, casos: [...casos.keys()], ms: Date.now() - inicio, tiempos, response_id: responseId ?? null, fallo },
     })
     .select("id")
     .single();
