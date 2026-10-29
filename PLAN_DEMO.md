@@ -147,11 +147,11 @@ Leyenda: **[P0]** indispensable para el demo · **[P1]** muy deseable · **[P2]*
 - [ ] [P2] Exponer las herramientas en `/api/mcp` con `mcp-handler` para abrirlas desde Claude Desktop en el demo.
 
 ### Fase 6 · Simulador de WhatsApp (1–2 nov)
-- [ ] [P0] Pantalla `/whatsapp`:
+- [x] [P0] Pantalla `/whatsapp`:
   - a la izquierda, la lista de conversaciones con filtro por estado de la intención;
   - al centro, el teléfono con burbujas estilo WhatsApp, respuestas rápidas como botones y streaming;
   - a la derecha, el panel "lo que entendió el agente": intención, confianza y herramientas llamadas.
-- [ ] [P0] Barra de escenarios de un clic:
+- [x] [P0] Barra de escenarios de un clic:
   - confirma con efectivo;
   - solo en la tarde;
   - no tengo efectivo, ¿puedo pagar por Nequi?;
@@ -160,19 +160,20 @@ Leyenda: **[P0]** indispensable para el demo · **[P1]** muy deseable · **[P2]*
   - yo no pedí nada;
   - "audio" (texto transcrito);
   - cliente molesto.
-- [ ] [P0] Escritura libre como comprador.
-- [ ] [P1] Indicador "escribiendo…" y marcas de leído.
+- [x] [P0] Escritura libre como comprador.
+- [x] [P1] Indicador "escribiendo…" y marcas de leído.
 
 ### Fase 7 · Consola (2–3 nov)
-- [ ] [P0] Buffer del corte:
+*(Rama `feat/consola`: pantallas leen Supabase + Realtime y escriben solo vía `/api/*` con `x-admin-token`. Las acciones dependen de las rutas de la rama `feat/agente`; sin ellas muestran "endpoint no disponible".)*
+- [x] [P0] Buffer del corte:
   - mosaicos-filtro y barra por estado;
   - tabla de envíos, en tiempo real;
   - reloj hasta el corte;
   - exportar la lista de ruta.
-- [ ] [P0] Detalle de envío: línea de tiempo, promesa vigente, herramientas usadas y conversación.
-- [ ] [P0] Excepciones: tarjetas desde `casos`, con Aprobar, Rechazar o Tomar conversación. La decisión queda en `eventos`.
-- [ ] [P0] Actividad de agentes: feed EN VIVO desde `eventos` e interruptor de apagado en `config_demo`.
-- [ ] [P0] Control del demo:
+- [x] [P0] Detalle de envío: línea de tiempo, promesa vigente, herramientas usadas y conversación.
+- [x] [P0] Excepciones: tarjetas desde `casos`, con Aprobar, Rechazar o Tomar conversación. La decisión queda en `eventos`.
+- [x] [P0] Actividad de agentes: feed EN VIVO desde `eventos` e interruptor de apagado en `config_demo`.
+- [x] [P0] Control del demo:
   - crear envíos en Waygo;
   - sincronizar;
   - lanzar ola;
@@ -181,7 +182,7 @@ Leyenda: **[P0]** indispensable para el demo · **[P1]** muy deseable · **[P2]*
   - día D;
   - marcar pago recibido;
   - reiniciar.
-- [ ] [P1] Resultados (KPIs): calculados de la base del demo, marcados como "datos del demo".
+- [x] [P1] Resultados (KPIs): calculados de la base del demo, marcados como "datos del demo".
 - [ ] [P2] Pantalla móvil del mensajero (la del mockup) leyendo la promesa.
 
 ### Fase 8 · Pruebas y ensayo (3–4 nov)
