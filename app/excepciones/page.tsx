@@ -61,7 +61,7 @@ function Tarjeta({ c, envio, eventos }: { c: Caso; envio: Envio | undefined; eve
   }
 
   return (
-    <article className={`card exc${resuelto ? " resolved" : ""}`} aria-label={def.label}>
+    <article className={`card exc${resuelto && c.estado !== "tomado" ? " resolved" : ""}`} aria-label={def.label}>
       <div className="exc-top">
         <div className={`flag ${def.tono}`}>
           <Icono nombre={def.icono} />
