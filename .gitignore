@@ -1,0 +1,14 @@
+# credenciales
+.env
+.env.*
+!.env.example
+
+# dependencias y build
+node_modules/
+.next/
+out/
+.vercel/
+supabase/.temp/
+*.log
+.DS_Store
+*.tsbuildinfo
