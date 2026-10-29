@@ -14,16 +14,19 @@
     "gen:spec": "node scripts/gen-spec.mjs",
     "db:apply": "node scripts/db-apply.mjs",
     "emu:seed": "node scripts/emu-seed.mjs",
-    "test:contract": "node tests/contract/run.mjs"
+    "test:contract": "node tests/contract/run.mjs",
+    "test:agente": "node scripts/test-agente.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.109.0",
     "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",
     "next": "^15.5.28",
+    "openai": "^6.49.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
-    "server-only": "^0.0.1"
+    "server-only": "^0.0.1",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/node": "^20.19.43",
