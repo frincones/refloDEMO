@@ -12,3 +12,6 @@ supabase/.temp/
 *.log
 .DS_Store
 *.tsbuildinfo
+
+.vercel
+.env*

@@ -288,7 +288,7 @@ begin
                  public.wg_shipments, public.wg_workflows, public.wg_couriers, public.wg_novelty_types,
                  public.wg_statuses, public.wg_catalogs, public.wg_warehouses, public.wg_locations,
                  public.wg_api_keys, public.wg_clients restart identity cascade;
-  perform setval('public.wg_tracking_seq', 48400, false);
+  -- La secuencia de guías NO se reinicia: así una guía nunca se repite entre resiembras.
 end $$;
 revoke all on function public.wg_reset() from public, anon, authenticated;
 grant execute on function public.wg_reset() to service_role;
